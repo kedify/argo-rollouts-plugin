@@ -1,0 +1,80 @@
+version: 2
+
+project_name: argo-rollouts-plugin
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: rollouts-plugin-kedify
+    main: .
+    binary: rollouts-plugin-kedify
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+# Argo Rollouts downloads a single binary file from the `location` URL in the
+# `argo-rollouts-config` ConfigMap, so the release assets must be raw binaries
+# (not archives).
+archives:
+  - id: binary
+    formats: [binary]
+    name_template: "{{ .Binary }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 10
+    - title: Dependencies
+      regexp: '^.*?(deps|build)(\([[:word:]]+\))??!?:.+$'
+      order: 50
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - '^Merge pull request'
+      - '^Merge branch'
+
+release:
+  draft: false
+  prerelease: auto
+  header: |
+    ## Install
+
+    Add this entry to the `argo-rollouts-config` ConfigMap in the
+    `argo-rollouts` namespace and restart the argo-rollouts controller:
+
+    ```yaml
+    data:
+      trafficRouterPlugins: |
+        - name: "kedify/http"
+          location: "https://github.com/kedify/argo-rollouts-plugin/releases/download/{{ .Tag }}/rollouts-plugin-kedify-linux-amd64"
+          sha256: "<from checksums.txt>"
+    ```
+
+    See the [README](https://github.com/kedify/argo-rollouts-plugin#install)
+    for the required RBAC and a full example.
