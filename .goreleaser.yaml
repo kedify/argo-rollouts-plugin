@@ -62,19 +62,25 @@ changelog:
 release:
   draft: false
   prerelease: auto
+  # A minimal install snippet ships in the body so the release page is always
+  # usable even if the workflow's "Populate install snippet" step fails. Once
+  # checksums.txt is uploaded, the workflow overwrites everything above the
+  # "## Changelog" marker with the full per-platform snippet from
+  # .github/release-notes-install.md.tpl.
   header: |
     ## Install
 
-    Add this entry to the `argo-rollouts-config` ConfigMap in the
-    `argo-rollouts` namespace and restart the argo-rollouts controller:
+    Add this entry to the `argo-rollouts-config` ConfigMap in the `argo-rollouts` namespace and restart the argo-rollouts controller:
 
     ```yaml
     data:
       trafficRouterPlugins: |
         - name: "kedify/http"
           location: "https://github.com/kedify/argo-rollouts-plugin/releases/download/{{ .Tag }}/rollouts-plugin-kedify-linux-amd64"
-          sha256: "<from checksums.txt>"
+          sha256: "<see checksums.txt below>"
     ```
 
-    See the [README](https://github.com/kedify/argo-rollouts-plugin#install)
-    for the required RBAC and a full example.
+    > [!NOTE]
+    > Release notes are still being finalised — the per-platform sha256 values land here once the workflow completes. Until then, pin the hash from the [`checksums.txt`](https://github.com/kedify/argo-rollouts-plugin/releases/download/{{ .Tag }}/checksums.txt) asset.
+
+    See the [README](https://github.com/kedify/argo-rollouts-plugin#install) for the required RBAC and a full example.
