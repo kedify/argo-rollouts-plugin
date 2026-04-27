@@ -38,6 +38,17 @@ func notInitializedErr() plugintypes.RpcError {
 	return plugintypes.RpcError{ErrorString: fmt.Sprintf("plugin %q not initialized: InitPlugin was not called or failed", pluginName)}
 }
 
+// additionalDestinationsErr is returned by SetWeight/VerifyWeight/UpdateHash
+// when Argo Rollouts passes experiment/analysis destinations the kedify/http
+// plugin doesn't implement. Failing loudly here is preferred over silently
+// producing a routing config that doesn't reflect what the controller asked
+// for.
+func additionalDestinationsErr(n int) plugintypes.RpcError {
+	return plugintypes.RpcError{ErrorString: fmt.Sprintf(
+		"plugin %q does not support additionalDestinations (experiment/analysis traffic); got %d destinations",
+		pluginName, n)}
+}
+
 var httpsoGVR = schema.GroupVersionResource{
 	Group:    "http.keda.sh",
 	Version:  "v1alpha1",
@@ -88,7 +99,7 @@ func (p *KedifyPlugin) SetWeight(rollout *v1alpha1.Rollout, desiredWeight int32,
 		return plugintypes.RpcError{ErrorString: fmt.Sprintf("desiredWeight must be in [0,100], got %d", desiredWeight)}
 	}
 	if len(additionalDestinations) > 0 {
-		return plugintypes.RpcError{ErrorString: fmt.Sprintf("plugin %q does not support additionalDestinations (experiment/analysis traffic); got %d destinations", pluginName, len(additionalDestinations))}
+		return additionalDestinationsErr(len(additionalDestinations))
 	}
 	cfg, err := parsePluginConfig(rollout)
 	if err != nil {
@@ -166,7 +177,7 @@ func (p *KedifyPlugin) VerifyWeight(rollout *v1alpha1.Rollout, desiredWeight int
 		return plugintypes.NotVerified, plugintypes.RpcError{ErrorString: fmt.Sprintf("desiredWeight must be in [0,100], got %d", desiredWeight)}
 	}
 	if len(additionalDestinations) > 0 {
-		return plugintypes.NotVerified, plugintypes.RpcError{ErrorString: fmt.Sprintf("plugin %q does not support additionalDestinations (experiment/analysis traffic); got %d destinations", pluginName, len(additionalDestinations))}
+		return plugintypes.NotVerified, additionalDestinationsErr(len(additionalDestinations))
 	}
 	cfg, err := parsePluginConfig(rollout)
 	if err != nil {
@@ -187,7 +198,7 @@ func (p *KedifyPlugin) VerifyWeight(rollout *v1alpha1.Rollout, desiredWeight int
 		metav1.GetOptions{},
 	)
 	if err != nil {
-		return plugintypes.NotVerified, plugintypes.RpcError{ErrorString: fmt.Sprintf("failed to get HTTPSO: %v", err)}
+		return plugintypes.NotVerified, plugintypes.RpcError{ErrorString: fmt.Sprintf("failed to get HTTPSO %s/%s: %v", namespace, cfg.HTTPScaledObjectName, err)}
 	}
 
 	annotations := httpso.GetAnnotations()
@@ -252,7 +263,7 @@ func (p *KedifyPlugin) RemoveManagedRoutes(rollout *v1alpha1.Rollout) plugintype
 		metav1.PatchOptions{},
 	)
 	if err != nil {
-		return plugintypes.RpcError{ErrorString: fmt.Sprintf("failed to patch HTTPSO: %v", err)}
+		return plugintypes.RpcError{ErrorString: fmt.Sprintf("failed to patch HTTPSO %s/%s: %v", namespace, cfg.HTTPScaledObjectName, err)}
 	}
 
 	return plugintypes.RpcError{}
@@ -263,9 +274,7 @@ func (p *KedifyPlugin) RemoveManagedRoutes(rollout *v1alpha1.Rollout) plugintype
 //nolint:lll
 func (p *KedifyPlugin) UpdateHash(rollout *v1alpha1.Rollout, canaryHash string, stableHash string, additionalDestinations []v1alpha1.WeightDestination) plugintypes.RpcError {
 	if len(additionalDestinations) > 0 {
-		return plugintypes.RpcError{ErrorString: fmt.Sprintf(
-			"plugin %q does not support additionalDestinations (experiment/analysis traffic); got %d destinations",
-			pluginName, len(additionalDestinations))}
+		return additionalDestinationsErr(len(additionalDestinations))
 	}
 	return plugintypes.RpcError{}
 }
