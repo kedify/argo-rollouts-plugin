@@ -1,0 +1,12 @@
+.git/
+.github/
+*.md
+LICENSE
+CODEOWNERS
+.golangci.yml
+.gitignore
+.dockerignore
+/bin/
+/dist/
+*.test
+*.out

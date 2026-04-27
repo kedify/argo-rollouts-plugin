@@ -1,0 +1,29 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+rollouts-plugin-kedify
+argo-rollouts-plugin
+
+# Test artifacts
+*.test
+*.out
+coverage.txt
+
+# IDE / editor
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+*~
+
+# goreleaser
+/dist/
+/.goreleaser-snapshot/
+
+# vendor
+/vendor/

@@ -1,0 +1,33 @@
+version: "2"
+run:
+  allow-parallel-runners: true
+linters:
+  default: none
+  enable:
+    - copyloopvar
+    - dupl
+    - errcheck
+    - gocyclo
+    - govet
+    - ineffassign
+    - lll
+    - misspell
+    - nakedret
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+  settings:
+    gocyclo:
+      min-complexity: 40
+    lll:
+      line-length: 140
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+formatters:
+  enable:
+    - gofmt
+    - goimports
