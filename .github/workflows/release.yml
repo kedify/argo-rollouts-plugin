@@ -28,3 +28,42 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Goreleaser ships a placeholder install snippet (see release.header in
+      # .goreleaser.yaml) plus a generated changelog. Once checksums.txt is
+      # uploaded with the binaries, this step replaces the install section
+      # with a fully populated per-platform one (.github/release-notes-install.md.tpl)
+      # and preserves the changelog tail. If this step fails for any reason,
+      # the placeholder body left by goreleaser is still informative.
+      - name: Populate install snippet with real sha256 values
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          tmpdir=$(mktemp -d)
+          trap 'rm -rf "$tmpdir"' EXIT
+
+          gh release download "$TAG" -R "$REPO" -p checksums.txt -D "$tmpdir"
+
+          sha_for() { awk -v f="$1" '$2==f {print $1; found=1} END {if (!found) exit 1}' "$tmpdir/checksums.txt"; }
+
+          export BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+          export REPO_URL="https://github.com/${REPO}"
+          export SHA_LINUX_AMD64=$(sha_for rollouts-plugin-kedify-linux-amd64)
+          export SHA_LINUX_ARM64=$(sha_for rollouts-plugin-kedify-linux-arm64)
+          export SHA_DARWIN_AMD64=$(sha_for rollouts-plugin-kedify-darwin-amd64)
+          export SHA_DARWIN_ARM64=$(sha_for rollouts-plugin-kedify-darwin-arm64)
+
+          envsubst < .github/release-notes-install.md.tpl > "$tmpdir/install.md"
+
+          # Preserve only the changelog tail (everything from "## Changelog" onward),
+          # discarding goreleaser's placeholder install header now that we have a
+          # populated one to put in its place.
+          gh release view "$TAG" -R "$REPO" --json body --jq .body \
+            | awk '/^## Changelog/{p=1} p' > "$tmpdir/changelog.md"
+
+          { cat "$tmpdir/install.md"; printf '\n'; cat "$tmpdir/changelog.md"; } > "$tmpdir/notes.md"
+          gh release edit "$TAG" -R "$REPO" --notes-file "$tmpdir/notes.md"
