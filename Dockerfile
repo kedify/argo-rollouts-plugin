@@ -9,5 +9,5 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/rollouts-plugin-kedify .
 
-FROM alpine:3.23
+FROM alpine:3.24
 COPY --from=builder /out/rollouts-plugin-kedify /plugin/rollouts-plugin-kedify
