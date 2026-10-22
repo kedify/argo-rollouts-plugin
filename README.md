@@ -188,6 +188,10 @@ Envoy's native stateful-session filter. New sessions follow the rollout weights.
 Existing sessions retain their endpoint across weight changes and scale-out, so
 the weights describe new assignments rather than total request percentages.
 
+Envoy's cluster metrics aggregate both versions in this mode. Use application
+metrics labeled by revision when rollout analysis needs separate stable and
+canary results.
+
 - **DNS discovery:** stable and canary must be ordinary ClusterIP Services. The
   cookie pins the resolved Service IP and port; pod replacement behind that
   Service does not change the selected version. Headless Services require EDS.
