@@ -170,9 +170,7 @@ This option requires a plugin build containing session persistence support and:
 
 - **Kedify KEDA `v2.21.0-3` or later**, whose HTTP scaler preserves the plugin's
   HSO routing annotations.
-- **Kedify HTTP add-on `v0.11.1-8` or later**. `v0.11.1-8` is the expected first
-  supporting release and is not yet released. `v0.11.1-7` and earlier do not
-  support session persistence.
+- **Kedify HTTP add-on `v0.11.1-8` or later**.
 
 The proxy must include Envoy's native stateful-session cookie filter.
 
