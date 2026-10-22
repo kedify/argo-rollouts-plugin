@@ -166,9 +166,14 @@ spec:
 
 ## Session persistence
 
-This option requires plugin and HTTP add-on builds containing session persistence
-support, plus a KEDA HTTP scaler that preserves the plugin's HSO annotations.
-Older releases that only generate `weighted_clusters` do not support it.
+This option requires a plugin build containing session persistence support and:
+
+- **Kedify KEDA `v2.21.0-3` or later**, whose HTTP scaler preserves the plugin's
+  HSO routing annotations.
+- **Kedify HTTP add-on `v0.11.1-8` or later**. `v0.11.1-8` is the expected first
+  supporting release and is not yet released. `v0.11.1-7` and earlier do not
+  support session persistence.
+
 The proxy must include Envoy's native stateful-session cookie filter.
 
 Add the following to the plugin configuration in the Rollout:
