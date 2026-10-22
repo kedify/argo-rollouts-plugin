@@ -1,6 +1,6 @@
 module github.com/kedify/argo-rollouts-plugin
 
-go 1.26.10
+go 1.27.3
 
 require (
 	github.com/argoproj/argo-rollouts v1.9.0
