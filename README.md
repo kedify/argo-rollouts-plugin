@@ -5,30 +5,44 @@ for [Argo Rollouts](https://argoproj.github.io/argo-rollouts/) that drives
 canary traffic splitting through Kedify's HTTP autoscaling stack.
 
 Argo Rollouts owns the canary steps (image promotion, weight progression,
-pause conditions). This plugin translates each `setWeight` step into a YAML
-annotation on the matching `HTTPScaledObject`, which the Kedify interceptor
-picks up and turns into Envoy `weighted_clusters`. Ingress autowire keeps the
-upstream Ingress / ALB pointed at `kedify-proxy`, so traffic splitting happens
-inside the interceptor rather than the load balancer.
+pause conditions). This plugin writes the desired weights and optional session
+configuration to annotations on the matching `HTTPScaledObject`. The Kedify
+interceptor converts them into Envoy routing configuration. Ingress autowire
+keeps the upstream Ingress / ALB pointed at `kedify-proxy`, where traffic splits
+between the stable and canary backends.
+
+With `sessionPersistence` enabled, the application route uses one Envoy cluster
+containing weighted stable and canary endpoints throughout the canary split.
+Envoy's native session filter keeps subsequent requests on the assigned endpoint.
+Without that option, routing retains the existing Envoy `weighted_clusters`
+behavior. See [Session persistence](#session-persistence).
 
 ## How it fits together
 
 ```
 Argo Rollouts → SetWeight(N)
    ↓ patches
-HTTPScaledObject annotation: http.kedify.io/weighted-backends
-   - service: stable
-     weight: 100-N
-   - service: canary
-     weight: N
+HTTPScaledObject annotations:
+   http.kedify.io/weighted-backends: stable=100-N, canary=N
+   http.kedify.io/session-persistence: cookie configuration (when enabled)
    ↓ observed by
-Kedify interceptor → Envoy WeightedClusters
-   ↓
-kedify-proxy splits traffic between stable / canary services
+Kedify interceptor → Envoy routing configuration
+   ↓ consumed by
+kedify-proxy → stable / canary backends
 ```
 
-When `setWeight` reaches `0` the plugin removes the annotation and the
-interceptor reverts to a single cluster.
+For application traffic after cold-start readiness:
+
+| Rollout state | Without `sessionPersistence` | With `sessionPersistence` |
+| --- | --- | --- |
+| Active canary split (`setWeight` > `0`) | `weighted_clusters` selects between stable and canary Service clusters. | One application cluster contains weighted stable and canary endpoints; cookies preserve the selected endpoint. |
+| `setWeight: 0` or managed-route cleanup | One application cluster targets the HSO's primary Service. | One application cluster targets the HSO's primary Service; rollout cookies are ignored. |
+
+At weight zero or managed-route cleanup, the plugin removes both routing
+annotations. The primary Service is normally the Rollout's stable Service.
+With session persistence, the route remains a single-cluster route: cleanup
+removes the canary endpoint pool and cookie configuration. Without session
+persistence, cleanup replaces weighted-cluster routing with the primary cluster.
 
 ## Install
 
@@ -149,6 +163,71 @@ spec:
         targetValue: "5"
         trafficAutowire: "ingress"
 ```
+
+## Session persistence
+
+This option requires a plugin build containing session persistence support and:
+
+- **Kedify KEDA `v2.21.0-3` or later**.
+- **Kedify HTTP add-on `v0.11.1-8` or later**.
+
+The proxy must include Envoy's native stateful-session cookie filter.
+
+Add the following to the plugin configuration in the Rollout:
+
+```yaml
+trafficRouting:
+  plugins:
+    kedify/http:
+      httpScaledObjectName: myapp
+      sessionPersistence:
+        type: Cookie
+        absoluteTimeout: 30m
+        cookie:
+          name: rollout-session
+```
+
+`cookie.name` is an optional prefix, defaulting to `kedify-rollout`. The plugin
+appends an identifier scoped to the namespace, Rollout identity, HSO and current
+canary revision. The name stays unchanged as weights progress, and a new revision
+gets a different name. `absoluteTimeout` defaults to `30m` and must be a whole
+number of seconds, at least `1s`. Cookies use `Path=/`, `HttpOnly` and
+`SameSite=Lax`; clients must return the cookie on subsequent requests.
+
+With this option, the HTTP add-on uses one cluster with weighted endpoints and
+Envoy's native stateful-session filter. New sessions follow the rollout weights.
+Existing sessions retain their endpoint across weight changes and scale-out, so
+the weights describe new assignments rather than total request percentages.
+
+Envoy's cluster metrics aggregate both versions in this mode. Use application
+metrics labeled by revision when rollout analysis needs separate stable and
+canary results.
+
+- **DNS discovery:** stable and canary must be ordinary ClusterIP Services. The
+  cookie pins the resolved Service IP and port; pod replacement behind that
+  Service does not change the selected version. Headless Services require EDS.
+- **EDS discovery:** the add-on divides each version's weight among its ready
+  endpoints and recalculates it as pods change. If a pinned pod disappears,
+  Envoy chooses another endpoint using the current weights, possibly from the
+  other version, and issues a replacement cookie. Requests then stay on that
+  endpoint while it remains available. Unready endpoint groups receive no traffic.
+- **Cold starts:** requests still queue at the interceptor. After readiness, the
+  interceptor selects an application endpoint with the same weights and issues
+  a cookie compatible with the warm Envoy path. Waiting pages and timeout
+  fallback responses do not establish application affinity.
+- **Completion and abort:** weight zero and managed-route cleanup remove both
+  annotations. Requests return to the primary stable Service and old cookies are
+  ignored. A backend at zero weight is removed from the sticky endpoint pool,
+  so its existing sessions are reassigned.
+
+The sticky cluster requires `ROUND_ROBIN` without a custom or subset load-balancing
+policy. TLS passthrough and inference pools are unsupported. This feature does not
+keep application state alive after pod removal or retain old static assets after
+promotion. Keep assets referenced by already-open pages available across versions
+if those pages must survive a version change.
+
+Omitting `sessionPersistence` preserves the existing weighted-cluster behavior.
+Removing the option during a rollout clears its session-persistence annotation.
 
 ## Worked example
 
