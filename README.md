@@ -168,7 +168,7 @@ spec:
 
 This option requires a plugin build containing session persistence support and:
 
-- **Kedify KEDA `v2.21.0-3` or later**, whose HTTP scaler preserves the plugin's
+- **Kedify KEDA `v2.21.0-3` or later**.
   HSO routing annotations.
 - **Kedify HTTP add-on `v0.11.1-8` or later**.
 
