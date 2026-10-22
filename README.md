@@ -159,8 +159,7 @@ spec:
 This option requires plugin and HTTP add-on builds containing session persistence
 support, plus a KEDA HTTP scaler that preserves the plugin's HSO annotations.
 Older releases that only generate `weighted_clusters` do not support it.
-The proxy must include Envoy's native stateful-session cookie filter; the feature
-is validated with Envoy `1.39.3`.
+The proxy must include Envoy's native stateful-session cookie filter.
 
 Add the following to the plugin configuration in the Rollout:
 
