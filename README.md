@@ -67,7 +67,7 @@ metadata:
 data:
   trafficRouterPlugins: |
     - name: "kedify/http"
-      location: "https://github.com/kedify/argo-rollouts-plugin/releases/download/v0.1.0/rollouts-plugin-kedify-linux-amd64"
+      location: "https://github.com/kedify/argo-rollouts-plugin/releases/download/v0.0.2/rollouts-plugin-kedify-linux-amd64"
       sha256: "<paste from checksums.txt>"
 ```
 
@@ -166,7 +166,7 @@ spec:
 
 ## Session persistence
 
-This option requires a plugin build containing session persistence support and:
+This option requires **plugin `v0.0.2` or later** and:
 
 - **Kedify KEDA `v2.21.0-3` or later**.
 - **Kedify HTTP add-on `v0.11.1-8` or later**.
@@ -263,9 +263,14 @@ Releases are produced by [GoReleaser](https://goreleaser.com/) on tag push
 `checksums.txt` with SHA-256 hashes — copy the relevant hash into your
 `argo-rollouts-config` ConfigMap to pin the binary.
 
+After the release preparation PR is merged, tag the reviewed release commit
+on `main`:
+
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git switch main
+git pull --ff-only
+git tag -a v0.0.2 -m "Release v0.0.2"
+git push origin v0.0.2
 ```
 
 The `release` workflow (`.github/workflows/release.yml`) takes care of the
