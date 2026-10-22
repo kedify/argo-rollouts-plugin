@@ -11,6 +11,10 @@ picks up and turns into Envoy `weighted_clusters`. Ingress autowire keeps the
 upstream Ingress / ALB pointed at `kedify-proxy`, so traffic splitting happens
 inside the interceptor rather than the load balancer.
 
+Opt-in cookie session persistence uses one Envoy cluster containing weighted
+stable and canary endpoints. Envoy's native session filter keeps subsequent
+requests on the assigned endpoint. See [Session persistence](#session-persistence).
+
 ## How it fits together
 
 ```
@@ -27,7 +31,7 @@ Kedify interceptor → Envoy WeightedClusters
 kedify-proxy splits traffic between stable / canary services
 ```
 
-When `setWeight` reaches `0` the plugin removes the annotation and the
+When `setWeight` reaches `0` the plugin removes its routing annotations and the
 interceptor reverts to a single cluster.
 
 ## Install
@@ -149,6 +153,65 @@ spec:
         targetValue: "5"
         trafficAutowire: "ingress"
 ```
+
+## Session persistence
+
+This option requires plugin and HTTP add-on builds containing session persistence
+support. Older releases that only generate `weighted_clusters` do not support it.
+The proxy must include Envoy's native stateful-session cookie filter; the feature
+is validated with Envoy `1.39.3`.
+
+Add the following to the plugin configuration in the Rollout:
+
+```yaml
+trafficRouting:
+  plugins:
+    kedify/http:
+      httpScaledObjectName: myapp
+      sessionPersistence:
+        type: Cookie
+        absoluteTimeout: 30m
+        cookie:
+          name: rollout-session
+```
+
+`cookie.name` is an optional prefix, defaulting to `kedify-rollout`. The plugin
+appends an identifier scoped to the namespace, Rollout identity, HSO and current
+canary revision. The name stays unchanged as weights progress, and a new revision
+gets a different name. `absoluteTimeout` defaults to `30m` and must be a whole
+number of seconds, at least `1s`. Cookies use `Path=/`, `HttpOnly` and
+`SameSite=Lax`; clients must return the cookie on subsequent requests.
+
+With this option, the HTTP add-on uses one cluster with weighted endpoints and
+Envoy's native stateful-session filter. New sessions follow the rollout weights.
+Existing sessions retain their endpoint across weight changes and scale-out, so
+the weights describe new assignments rather than total request percentages.
+
+- **DNS discovery:** stable and canary must be ordinary ClusterIP Services. The
+  cookie pins the resolved Service IP and port; pod replacement behind that
+  Service does not change the selected version. Headless Services require EDS.
+- **EDS discovery:** the add-on divides each version's weight among its ready
+  endpoints and recalculates it as pods change. If a pinned pod disappears,
+  Envoy chooses another endpoint using the current weights, possibly from the
+  other version, and issues a replacement cookie. Requests then stay on that
+  endpoint while it remains available. Unready endpoint groups receive no traffic.
+- **Cold starts:** requests still queue at the interceptor. After readiness, the
+  interceptor selects an application endpoint with the same weights and issues
+  a cookie compatible with the warm Envoy path. Waiting pages and timeout
+  fallback responses do not establish application affinity.
+- **Completion and abort:** weight zero and managed-route cleanup remove both
+  annotations. Requests return to the primary stable Service and old cookies are
+  ignored. A backend at zero weight is removed from the sticky endpoint pool,
+  so its existing sessions are reassigned.
+
+The sticky cluster requires `ROUND_ROBIN` without a custom or subset load-balancing
+policy. TLS passthrough and inference pools are unsupported. This feature does not
+keep application state alive after pod removal or retain old static assets after
+promotion. Keep assets referenced by already-open pages available across versions
+if those pages must survive a version change.
+
+Omitting `sessionPersistence` preserves the existing weighted-cluster behavior.
+Removing the option during a rollout clears its session-persistence annotation.
 
 ## Worked example
 

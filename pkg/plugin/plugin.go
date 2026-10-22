@@ -63,7 +63,8 @@ type WeightedBackend struct {
 
 // KedifyPluginConfig is the plugin configuration from the Rollout CR
 type KedifyPluginConfig struct {
-	HTTPScaledObjectName string `json:"httpScaledObjectName"`
+	HTTPScaledObjectName string              `json:"httpScaledObjectName"`
+	SessionPersistence   *SessionPersistence `json:"sessionPersistence,omitempty"`
 }
 
 // KedifyPlugin implements the Argo Rollouts TrafficRouterPlugin interface
@@ -116,13 +117,24 @@ func (p *KedifyPlugin) SetWeight(rollout *v1alpha1.Rollout, desiredWeight int32,
 	slog.Info("SetWeight", "httpso", cfg.HTTPScaledObjectName, "namespace", namespace,
 		"desiredWeight", desiredWeight, "stable", stableService, "canary", canaryService)
 
+	var persistence any
+	if desiredWeight > 0 {
+		value, err := sessionAnnotation(rollout, cfg)
+		if err != nil {
+			return plugintypes.RpcError{ErrorString: err.Error()}
+		}
+		if value != "" {
+			persistence = value
+		}
+	}
 	var patch map[string]interface{}
 	if desiredWeight == 0 {
 		// remove annotation when weight is 0 (promotion complete)
 		patch = map[string]interface{}{
 			"metadata": map[string]interface{}{
 				"annotations": map[string]interface{}{
-					weightedBackendsAnnotation: nil,
+					weightedBackendsAnnotation:   nil,
+					sessionPersistenceAnnotation: nil,
 				},
 			},
 		}
@@ -138,7 +150,8 @@ func (p *KedifyPlugin) SetWeight(rollout *v1alpha1.Rollout, desiredWeight int32,
 		patch = map[string]interface{}{
 			"metadata": map[string]interface{}{
 				"annotations": map[string]interface{}{
-					weightedBackendsAnnotation: string(backendsYAML),
+					weightedBackendsAnnotation:   string(backendsYAML),
+					sessionPersistenceAnnotation: persistence,
 				},
 			},
 		}
@@ -205,8 +218,18 @@ func (p *KedifyPlugin) VerifyWeight(rollout *v1alpha1.Rollout, desiredWeight int
 	if desiredWeight == 0 {
 		// weight 0 means promotion is complete, annotation should be removed
 		if _, exists := annotations[weightedBackendsAnnotation]; !exists {
+			if _, exists := annotations[sessionPersistenceAnnotation]; exists {
+				return plugintypes.NotVerified, plugintypes.RpcError{}
+			}
 			return plugintypes.Verified, plugintypes.RpcError{}
 		}
+		return plugintypes.NotVerified, plugintypes.RpcError{}
+	}
+	expectedSession, err := sessionAnnotation(rollout, cfg)
+	if err != nil {
+		return plugintypes.NotVerified, plugintypes.RpcError{ErrorString: err.Error()}
+	}
+	if annotations[sessionPersistenceAnnotation] != expectedSession {
 		return plugintypes.NotVerified, plugintypes.RpcError{}
 	}
 
@@ -244,7 +267,8 @@ func (p *KedifyPlugin) RemoveManagedRoutes(rollout *v1alpha1.Rollout) plugintype
 	patch := map[string]interface{}{
 		"metadata": map[string]interface{}{
 			"annotations": map[string]interface{}{
-				weightedBackendsAnnotation: nil,
+				weightedBackendsAnnotation:   nil,
+				sessionPersistenceAnnotation: nil,
 			},
 		},
 	}
