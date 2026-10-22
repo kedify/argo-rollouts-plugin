@@ -5,34 +5,44 @@ for [Argo Rollouts](https://argoproj.github.io/argo-rollouts/) that drives
 canary traffic splitting through Kedify's HTTP autoscaling stack.
 
 Argo Rollouts owns the canary steps (image promotion, weight progression,
-pause conditions). This plugin translates each `setWeight` step into a YAML
-annotation on the matching `HTTPScaledObject`, which the Kedify interceptor
-picks up and turns into Envoy `weighted_clusters`. Ingress autowire keeps the
-upstream Ingress / ALB pointed at `kedify-proxy`, so traffic splitting happens
-inside the interceptor rather than the load balancer.
+pause conditions). This plugin writes the desired weights and optional session
+configuration to annotations on the matching `HTTPScaledObject`. The Kedify
+interceptor converts them into Envoy routing configuration. Ingress autowire
+keeps the upstream Ingress / ALB pointed at `kedify-proxy`, where traffic splits
+between the stable and canary backends.
 
-Opt-in cookie session persistence uses one Envoy cluster containing weighted
-stable and canary endpoints. Envoy's native session filter keeps subsequent
-requests on the assigned endpoint. See [Session persistence](#session-persistence).
+With `sessionPersistence` enabled, the application route uses one Envoy cluster
+containing weighted stable and canary endpoints throughout the canary split.
+Envoy's native session filter keeps subsequent requests on the assigned endpoint.
+Without that option, routing retains the existing Envoy `weighted_clusters`
+behavior. See [Session persistence](#session-persistence).
 
 ## How it fits together
 
 ```
 Argo Rollouts → SetWeight(N)
    ↓ patches
-HTTPScaledObject annotation: http.kedify.io/weighted-backends
-   - service: stable
-     weight: 100-N
-   - service: canary
-     weight: N
+HTTPScaledObject annotations:
+   http.kedify.io/weighted-backends: stable=100-N, canary=N
+   http.kedify.io/session-persistence: cookie configuration (when enabled)
    ↓ observed by
-Kedify interceptor → Envoy WeightedClusters
-   ↓
-kedify-proxy splits traffic between stable / canary services
+Kedify interceptor → Envoy routing configuration
+   ↓ consumed by
+kedify-proxy → stable / canary backends
 ```
 
-When `setWeight` reaches `0` the plugin removes its routing annotations and the
-interceptor reverts to a single cluster.
+For application traffic after cold-start readiness:
+
+| Rollout state | Without `sessionPersistence` | With `sessionPersistence` |
+| --- | --- | --- |
+| Active canary split (`setWeight` > `0`) | `weighted_clusters` selects between stable and canary Service clusters. | One application cluster contains weighted stable and canary endpoints; cookies preserve the selected endpoint. |
+| `setWeight: 0` or managed-route cleanup | One application cluster targets the HSO's primary Service. | One application cluster targets the HSO's primary Service; rollout cookies are ignored. |
+
+At weight zero or managed-route cleanup, the plugin removes both routing
+annotations. The primary Service is normally the Rollout's stable Service.
+With session persistence, the route remains a single-cluster route: cleanup
+removes the canary endpoint pool and cookie configuration. Without session
+persistence, cleanup replaces weighted-cluster routing with the primary cluster.
 
 ## Install
 
