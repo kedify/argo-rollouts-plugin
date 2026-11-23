@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM golang:1.27.3-alpine@sha256:d530cf60723abf1ffae0cd16bb546b379ec0550d2f3815e5b16ed69dbc00fba4 AS builder
+FROM golang:1.27.4-alpine@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
